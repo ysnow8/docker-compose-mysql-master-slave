@@ -1,0 +1,36 @@
+version: '3'
+
+services:
+  mysql-master:
+    build:
+      context: ./
+      dockerfile: master/Dockerfile
+    restart: always
+    container_name: "mysql_master"
+    environment:
+      MYSQL_ROOT_PASSWORD: masterpassword
+      MYSQL_DATABASE: mydb
+    volumes:
+      - ./master/data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - db-network
+
+  mysql-slave:
+    build:
+      context: ./
+      dockerfile: slave/Dockerfile
+    container_name: "mysql_slave"
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: slavepassword
+    volumes:
+      - ./slave/data:/var/lib/mysql
+    depends_on:
+      - mysql-master
+    networks:
+      - db-network
+
+networks:
+  db-network:
