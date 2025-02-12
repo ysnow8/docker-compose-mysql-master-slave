@@ -1,36 +1,97 @@
-version: '3'
+version: '3.8'
 
 services:
+  # -----------------------------
+  # 主库 (mysql-master)
+  # -----------------------------
   mysql-master:
-    build:
-      context: ./
-      dockerfile: master/Dockerfile
+    image: mysql:5.7
+    container_name: mysql-master
     restart: always
-    container_name: "mysql_master"
     environment:
-      MYSQL_ROOT_PASSWORD: masterpassword
-      MYSQL_DATABASE: mydb
+      MYSQL_ROOT_PASSWORD: root    # root 密码
+      REPL_USER: repluser         # 复制用户
+      REPL_PASSWORD: replpass     # 复制用户密码
+    command: >
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --log-slave-updates=ON
     volumes:
-      - ./master/data:/var/lib/mysql
+      # 这里挂载主库初始化脚本
+      - ./master-init:/docker-entrypoint-initdb.d
+      # 如需持久化数据，可以定义:
+      # - master-data:/var/lib/mysql
     ports:
-      - "3306:3306"
-    networks:
-      - db-network
+      - "3336:3306"  # 修改为端口 3336
+    # 可选：healthcheck，供从库 depends_on condition: service_healthy 使用
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      interval: 5s
+      retries: 5
 
-  mysql-slave:
-    build:
-      context: ./
-      dockerfile: slave/Dockerfile
-    container_name: "mysql_slave"
+  # -----------------------------
+  # 从库 1 (mysql-slave1)
+  # -----------------------------
+  mysql-slave1:
+    image: mysql:5.7
+    container_name: mysql-slave1
     restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: slavepassword
-    volumes:
-      - ./slave/data:/var/lib/mysql
     depends_on:
-      - mysql-master
-    networks:
-      - db-network
+      mysql-master:
+        condition: service_healthy
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      REPL_USER: repluser
+      REPL_PASSWORD: replpass
+      MASTER_HOST: mysql-master
+    command: >
+      --server-id=2
+      --relay-log=relay-bin
+      --log-bin=mysql-slave1-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --log-slave-updates=ON
+    volumes:
+      - ./slave-init:/docker-entrypoint-initdb.d
+      # - slave1-data:/var/lib/mysql
+    ports:
+      - "3337:3306"  # 修改为端口 3337
 
-networks:
-  db-network:
+  # -----------------------------
+  # 从库 2 (mysql-slave2)
+  # -----------------------------
+  mysql-slave2:
+    image: mysql:5.7
+    container_name: mysql-slave2
+    restart: always
+    depends_on:
+      mysql-master:
+        condition: service_healthy
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      REPL_USER: repluser
+      REPL_PASSWORD: replpass
+      MASTER_HOST: mysql-master
+    command: >
+      --server-id=3
+      --relay-log=relay-bin
+      --log-bin=mysql-slave2-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --log-slave-updates=ON
+    volumes:
+      - ./slave-init:/docker-entrypoint-initdb.d
+      # - slave2-data:/var/lib/mysql
+    ports:
+      - "3338:3306"  # 修改为端口 3338
+
+# 如需持久化，可定义命名卷 (当前示例注释掉)
+# volumes:
+#   master-data:
+#   slave1-data:
+#   slave2-data:
